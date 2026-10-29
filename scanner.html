@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scan Attendance QR</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f6f4f4; text-align: center; padding: 20px; margin: 0; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-top: 5px solid #8C033B; }
+    h2 { color: #8C033B; }
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin: 15px 0; }
+    .status { font-weight: bold; margin-top: 15px; padding: 10px; border-radius: 7px; }
+    .success { background: #e5f3eb; color: #17633a; }
+    .error { background: #ffe5e5; color: #a32020; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h2>Scan Attendance</h2>
+    <p>Point your camera at the lecturer's screen.</p>
+    
+    <div id="reader"></div>
+    <div id="status" class="status" style="display:none;"></div>
+  </div>
+
+  <script>
+    // YOUR EXACT GOOGLE APPS SCRIPT URL
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6mU7EJIVw1z_K36MCuVwPB1xqMlp4IeGxdNg1ErYjEs_w0cKRnc4_kmFW50HlF6S6/exec'; 
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const studentToken = urlParams.get('token');
+
+    if (!studentToken) {
+      document.getElementById('status').textContent = "Error: No student token found. Please log in again.";
+      document.getElementById('status').className = "status error";
+      document.getElementById('status').style.display = "block";
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+
+    function onScanSuccess(decodedText) {
+      html5QrCode.pause();
+
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = "Verifying...";
+      statusDiv.className = "status";
+      statusDiv.style.display = "block";
+
+      fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'scan',
+          token: studentToken,
+          code: decodedText
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.error) {
+          statusDiv.textContent = "Error: " + data.error;
+          statusDiv.className = "status error";
+          setTimeout(() => { html5QrCode.resume(); statusDiv.style.display = "none"; }, 3000);
+        } else {
+          statusDiv.textContent = "✅ Success! " + data.status + " at " + data.time;
+          statusDiv.className = "status success";
+        }
+      })
+      .catch(err => {
+        statusDiv.textContent = "Network Error. Check your connection.";
+        statusDiv.className = "status error";
+        setTimeout(() => { html5QrCode.resume(); statusDiv.style.display = "none"; }, 3000);
+      });
+    }
+
+    function onScanFailure(error) {
+      // Ignore
+    }
+
+    if (studentToken) {
+      html5QrCode.start(
+        { facingMode: "environment" }, 
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        onScanSuccess,
+        onScanFailure
+      ).catch(err => {
+        document.getElementById('status').textContent = "Camera Error: " + err;
+        document.getElementById('status').className = "status error";
+        document.getElementById('status').style.display = "block";
+      });
+    }
+  </script>
+</body>
+</html>
