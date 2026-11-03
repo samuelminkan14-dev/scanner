@@ -7,34 +7,51 @@
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body { font-family: Arial, sans-serif; background: #f6f4f4; text-align: center; padding: 20px; margin: 0; }
-    .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-top: 5px solid #8C033B; }
-    h2 { color: #8C033B; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-top: 5px solid #8C033B; position: relative; }
+    h2 { color: #8C033B; margin-top: 10px; }
     #reader { width: 100%; border-radius: 8px; overflow: hidden; margin: 15px 0; }
     .status { font-weight: bold; margin-top: 15px; padding: 10px; border-radius: 7px; }
     .success { background: #e5f3eb; color: #17633a; }
     .error { background: #ffe5e5; color: #a32020; }
     
-    /* Added styles for the 4-digit code input */
+    /* Back button style */
+    .back-btn {
+      display: inline-block;
+      background: #536779;
+      color: white;
+      text-decoration: none;
+      padding: 10px 15px;
+      border-radius: 7px;
+      font-weight: bold;
+      font-size: 14px;
+      position: absolute;
+      top: 20px;
+      left: 20px;
+    }
+    .back-btn:hover { background: #3d4d5c; }
+
     #pinArea { display: none; margin-top: 20px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
     input[type="number"] { padding: 10px; font-size: 24px; text-align: center; letter-spacing: 8px; width: 150px; border: 2px solid #8C033B; border-radius: 8px; font-family: monospace; }
-    button { background: #8C033B; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin-top: 10px; width: 100%; font-weight: bold; }
-    button:hover { background: #70082e; }
+    button.verify-btn { background: #8C033B; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin-top: 10px; width: 100%; font-weight: bold; }
+    button.verify-btn:hover { background: #70082e; }
   </style>
 </head>
 <body>
 
   <div class="container">
+    <!-- NEW: Back Button -->
+    <a href="javascript:window.close()" class="back-btn">⬅ Back to App</a>
+    
     <h2>Scan Attendance</h2>
     <p>Point your camera at the lecturer's screen.</p>
     
     <div id="reader"></div>
     <div id="status" class="status" style="display:none;"></div>
 
-    <!-- NEW: 4-digit code input -->
     <div id="pinArea">
       <p style="margin-top: 0; font-weight: bold; color: #8C033B;">Enter the 4-digit code shown on screen:</p>
       <input type="number" id="secretCode" maxlength="4" placeholder="0000">
-      <button onclick="submitScan()">Verify & Mark Present</button>
+      <button class="verify-btn" onclick="submitScan()">Verify & Mark Present</button>
     </div>
   </div>
 
@@ -43,7 +60,7 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     const studentToken = urlParams.get('token');
-    let scannedQrCode = null; // Store the scanned code here
+    let scannedQrCode = null; 
 
     if (!studentToken) {
       document.getElementById('status').textContent = "Error: No student token found. Please log in again.";
@@ -54,10 +71,8 @@
     const html5QrCode = new Html5Qrcode("reader");
 
     function onScanSuccess(decodedText) {
-      // 1. Pause camera
       html5QrCode.pause();
       
-      // 2. Extract the actual code from the URL inside the QR
       try {
         const url = new URL(decodedText);
         scannedQrCode = url.searchParams.get('code') || decodedText;
@@ -65,18 +80,15 @@
         scannedQrCode = decodedText;
       }
 
-      // 3. Show the PIN input area
       document.getElementById('pinArea').style.display = "block";
       
       const statusDiv = document.getElementById('status');
-      statusDiv.textContent = "✅ QR Detected! Please enter the 4-digit code above.";
+      statusDiv.textContent = "✅ QR Detected! Please enter the 4-digit code.";
       statusDiv.className = "status success";
       statusDiv.style.display = "block";
     }
 
-    function onScanFailure(error) {
-      // Ignore background failures
-    }
+    function onScanFailure(error) { }
 
     function submitScan() {
       const pin = document.getElementById('secretCode').value.trim();
@@ -87,16 +99,14 @@
       statusDiv.className = "status";
       statusDiv.style.display = "block";
 
-      // 4. Send to Google Apps Script
       fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
-        // CRITICAL: Use text/plain to bypass CORS on mobile phones
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'scan',
           token: studentToken,
           code: scannedQrCode,
-          secretCode: pin  // Send the 4-digit code!
+          secretCode: pin
         })
       })
       .then(response => response.json())
@@ -104,12 +114,11 @@
         if (data.error) {
           statusDiv.textContent = "❌ " + data.error;
           statusDiv.className = "status error";
-          // Let them try again
           document.getElementById('pinArea').style.display = "block";
         } else {
           statusDiv.textContent = "✅ Success! " + data.status + " at " + data.time;
           statusDiv.className = "status success";
-          document.getElementById('pinArea').style.display = "none"; // Hide input on success
+          document.getElementById('pinArea').style.display = "none"; 
         }
       })
       .catch(err => {
