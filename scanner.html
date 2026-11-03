@@ -10,15 +10,11 @@
     .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-top: 5px solid #8C033B; position: relative; }
     h2 { color: #8C033B; margin-top: 10px; }
     #reader { width: 100%; border-radius: 8px; overflow: hidden; margin: 15px 0; }
-    .status { font-weight: bold; margin-top: 15px; padding: 10px; border-radius: 7px; }
-    .success { background: #e5f3eb; color: #17633a; }
-    .error { background: #ffe5e5; color: #a32020; }
+    .status { font-weight: bold; margin-top: 15px; padding: 15px; border-radius: 7px; font-size: 16px; }
+    .success { background: #e5f3eb; color: #17633a; border: 1px solid #17633a; }
+    .error { background: #ffe5e5; color: #a32020; border: 1px solid #a32020; }
     .back-btn { display: inline-block; background: #536779; color: white; text-decoration: none; padding: 10px 15px; border-radius: 7px; font-weight: bold; font-size: 14px; position: absolute; top: 20px; left: 20px; }
     .back-btn:hover { background: #3d4d5c; }
-    #pinArea { display: none; margin-top: 20px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
-    input[type="number"] { padding: 10px; font-size: 24px; text-align: center; letter-spacing: 8px; width: 150px; border: 2px solid #8C033B; border-radius: 8px; font-family: monospace; }
-    button.verify-btn { background: #8C033B; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin-top: 10px; width: 100%; font-weight: bold; }
-    button.verify-btn:hover { background: #70082e; }
   </style>
 </head>
 <body>
@@ -28,17 +24,13 @@
     <p>Point your camera at the lecturer's screen.</p>
     <div id="reader"></div>
     <div id="status" class="status" style="display:none;"></div>
-    <div id="pinArea">
-      <p style="margin-top: 0; font-weight: bold; color: #8C033B;">Enter the 4-digit code shown on screen:</p>
-      <input type="number" id="secretCode" maxlength="4" placeholder="0000">
-      <button class="verify-btn" onclick="submitScan()">Verify & Mark Present</button>
-    </div>
   </div>
+
   <script>
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6mU7EJIVw1z_K36MCuVwPB1xqMlp4IeGxdNg1ErYjEs_w0cKRnc4_kmFW50HlF6S6/exec'; 
     const urlParams = new URLSearchParams(window.location.search);
     const studentToken = urlParams.get('token');
-    let scannedQrCode = null; 
+    let isProcessing = false;
 
     if (!studentToken) {
       document.getElementById('status').textContent = "Error: No student token found. Please log in again.";
@@ -49,28 +41,26 @@
     const html5QrCode = new Html5Qrcode("reader");
 
     function onScanSuccess(decodedText) {
+      if (isProcessing) return; // Prevent multiple scans
+      isProcessing = true;
+      
       html5QrCode.pause();
       
-      // THIS IS THE CRITICAL FIX: Extract just the code part from the URL
+      let scannedCode = null;
+      let scannedPin = null;
+
       try {
         const url = new URL(decodedText);
-        scannedQrCode = url.searchParams.get('code') || decodedText;
+        scannedCode = url.searchParams.get('code');
+        scannedPin = url.searchParams.get('pin'); // Extract PIN automatically!
       } catch (e) {
-        scannedQrCode = decodedText;
+        scannedCode = decodedText;
       }
 
-      document.getElementById('pinArea').style.display = "block";
-      const statusDiv = document.getElementById('status');
-      statusDiv.textContent = "✅ QR Detected! Enter the 4-digit code.";
-      statusDiv.className = "status success";
-      statusDiv.style.display = "block";
-    }
-
-    function onScanFailure(error) { }
-
-    function submitScan() {
-      const pin = document.getElementById('secretCode').value.trim();
-      if (!pin) return alert("Please enter the 4-digit code.");
+      if (!scannedCode || !scannedPin) {
+        showError("Invalid QR Code. Please ask the lecturer to generate a new one.");
+        return;
+      }
 
       const statusDiv = document.getElementById('status');
       statusDiv.textContent = "Getting GPS location...";
@@ -79,22 +69,22 @@
 
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-          function(position) { sendToBackend(pin, position.coords.latitude, position.coords.longitude); },
+          function(position) { 
+            sendToBackend(scannedCode, scannedPin, position.coords.latitude, position.coords.longitude); 
+          },
           function(error) {
-            statusDiv.textContent = "❌ GPS Error: Please allow location access in your browser settings.";
-            statusDiv.className = "status error";
+            showError("❌ GPS Error: Please allow location access in your browser settings.");
           },
           { enableHighAccuracy: true, timeout: 10000 }
         );
       } else {
-        statusDiv.textContent = "❌ Geolocation is not supported by this browser.";
-        statusDiv.className = "status error";
+        showError("❌ Geolocation is not supported by this browser.");
       }
     }
 
-    function sendToBackend(pin, lat, lng) {
+    function sendToBackend(code, pin, lat, lng) {
       const statusDiv = document.getElementById('status');
-      statusDiv.textContent = "Verifying...";
+      statusDiv.textContent = "Verifying attendance...";
 
       fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
@@ -102,7 +92,7 @@
         body: JSON.stringify({
           action: 'scan',
           token: studentToken,
-          code: scannedQrCode,
+          code: code,
           lat: lat,
           lng: lng,
           secretCode: pin
@@ -111,18 +101,25 @@
       .then(response => response.json())
       .then(data => {
         if (data.error) {
-          statusDiv.textContent = "❌ " + data.error;
-          statusDiv.className = "status error";
+          showError("❌ " + data.error);
         } else {
           statusDiv.textContent = "✅ Success! " + data.status + " at " + data.time;
           statusDiv.className = "status success";
-          document.getElementById('pinArea').style.display = "none"; 
+          html5QrCode.stop(); // Stop scanning on success
         }
       })
       .catch(err => {
-        statusDiv.textContent = "Network Error. Check your connection.";
-        statusDiv.className = "status error";
+        showError("Network Error. Check your connection.");
       });
+    }
+
+    function showError(msg) {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = msg;
+      statusDiv.className = "status error";
+      statusDiv.style.display = "block";
+      isProcessing = false;
+      setTimeout(() => { html5QrCode.resume(); }, 3000);
     }
 
     if (studentToken) {
@@ -130,7 +127,7 @@
         { facingMode: "environment" }, 
         { fps: 10, qrbox: { width: 250, height: 250 } },
         onScanSuccess,
-        onScanFailure
+        (err) => { } // Ignore background scan errors
       ).catch(err => {
         document.getElementById('status').textContent = "Camera Error: " + err;
         document.getElementById('status').className = "status error";
