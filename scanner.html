@@ -15,6 +15,10 @@
     .error { background: #ffe5e5; color: #a32020; border: 1px solid #a32020; }
     .back-btn { display: inline-block; background: #536779; color: white; text-decoration: none; padding: 10px 15px; border-radius: 7px; font-weight: bold; font-size: 14px; position: absolute; top: 20px; left: 20px; }
     .back-btn:hover { background: #3d4d5c; }
+    #pinArea { display: none; margin-top: 20px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
+    input[type="number"] { padding: 10px; font-size: 24px; text-align: center; letter-spacing: 8px; width: 150px; border: 2px solid #8C033B; border-radius: 8px; font-family: monospace; }
+    button.verify-btn { background: #8C033B; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin-top: 10px; width: 100%; font-weight: bold; }
+    button.verify-btn:hover { background: #70082e; }
   </style>
 </head>
 <body>
@@ -23,6 +27,14 @@
     <h2>Scan Attendance</h2>
     <p>Point your camera at the lecturer's screen.</p>
     <div id="reader"></div>
+    
+    <!-- This area shows the manual PIN input if the QR code doesn't have it -->
+    <div id="pinArea">
+      <p style="margin-top: 0; font-weight: bold; color: #8C033B;">QR Detected! Enter the 4-digit code:</p>
+      <input type="number" id="secretCode" maxlength="4" placeholder="0000">
+      <button class="verify-btn" onclick="submitManualCode()">Verify & Mark Present</button>
+    </div>
+
     <div id="status" class="status" style="display:none;"></div>
   </div>
 
@@ -30,7 +42,9 @@
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6mU7EJIVw1z_K36MCuVwPB1xqMlp4IeGxdNg1ErYjEs_w0cKRnc4_kmFW50HlF6S6/exec'; 
     const urlParams = new URLSearchParams(window.location.search);
     const studentToken = urlParams.get('token');
+    
     let isProcessing = false;
+    let currentScannedCode = null;
 
     if (!studentToken) {
       const statusDiv = document.getElementById('status');
@@ -47,45 +61,59 @@
       
       html5QrCode.pause();
       
-      let scannedCode = null;
       let scannedPin = null;
-
       try {
         const url = new URL(decodedText);
-        scannedCode = url.searchParams.get('code');
+        currentScannedCode = url.searchParams.get('code');
         scannedPin = url.searchParams.get('pin'); 
       } catch (e) {
-        scannedCode = decodedText;
+        currentScannedCode = decodedText;
       }
 
       const statusDiv = document.getElementById('status');
       statusDiv.style.display = "block";
       statusDiv.className = "status";
-      statusDiv.textContent = "Processing QR Code...";
+      statusDiv.textContent = "QR Code Detected...";
 
-      // Wait a tiny bit to ensure the URL parser finishes
-      setTimeout(() => {
-        if (!scannedCode || !scannedPin) {
-          showError("❌ Invalid QR Code. Ask lecturer to generate a new one.");
-          return;
-        }
+      if (currentScannedCode && scannedPin) {
+        // AUTO MODE: The PIN is embedded in the QR code
+        statusDiv.textContent = "Auto-verifying...";
+        requestGPSAndSubmit(currentScannedCode, scannedPin);
+      } else if (currentScannedCode) {
+        // MANUAL MODE: The QR code is old and doesn't have the PIN
+        statusDiv.style.display = "none";
+        document.getElementById('pinArea').style.display = "block";
+      } else {
+        showError("❌ Invalid QR Code. Please scan a valid USTED attendance code.");
+      }
+    }
 
-        statusDiv.textContent = "Getting GPS location...";
+    function submitManualCode() {
+      const pin = document.getElementById('secretCode').value.trim();
+      if (!pin) return alert("Please enter the 4-digit code.");
+      document.getElementById('pinArea').style.display = "none";
+      requestGPSAndSubmit(currentScannedCode, pin);
+    }
 
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            function(position) { 
-              sendToBackend(scannedCode, scannedPin, position.coords.latitude, position.coords.longitude); 
-            },
-            function(error) {
-              showError("❌ GPS Error: Please allow location access in your browser settings.");
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-          );
-        } else {
-          showError("❌ Geolocation is not supported by this browser.");
-        }
-      }, 100);
+    function requestGPSAndSubmit(code, pin) {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = "Getting GPS location...";
+      statusDiv.className = "status";
+      statusDiv.style.display = "block";
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          function(position) { 
+            sendToBackend(code, pin, position.coords.latitude, position.coords.longitude); 
+          },
+          function(error) {
+            showError("❌ GPS Error: Please allow location access in your browser settings.");
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      } else {
+        showError("❌ Geolocation is not supported by this browser.");
+      }
     }
 
     function sendToBackend(code, pin, lat, lng) {
