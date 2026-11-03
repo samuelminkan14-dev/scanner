@@ -13,6 +13,12 @@
     .status { font-weight: bold; margin-top: 15px; padding: 10px; border-radius: 7px; }
     .success { background: #e5f3eb; color: #17633a; }
     .error { background: #ffe5e5; color: #a32020; }
+    
+    /* Added styles for the 4-digit code input */
+    #pinArea { display: none; margin-top: 20px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
+    input[type="number"] { padding: 10px; font-size: 24px; text-align: center; letter-spacing: 8px; width: 150px; border: 2px solid #8C033B; border-radius: 8px; font-family: monospace; }
+    button { background: #8C033B; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin-top: 10px; width: 100%; font-weight: bold; }
+    button:hover { background: #70082e; }
   </style>
 </head>
 <body>
@@ -23,14 +29,21 @@
     
     <div id="reader"></div>
     <div id="status" class="status" style="display:none;"></div>
+
+    <!-- NEW: 4-digit code input -->
+    <div id="pinArea">
+      <p style="margin-top: 0; font-weight: bold; color: #8C033B;">Enter the 4-digit code shown on screen:</p>
+      <input type="number" id="secretCode" maxlength="4" placeholder="0000">
+      <button onclick="submitScan()">Verify & Mark Present</button>
+    </div>
   </div>
 
   <script>
-    // YOUR EXACT GOOGLE APPS SCRIPT URL
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6mU7EJIVw1z_K36MCuVwPB1xqMlp4IeGxdNg1ErYjEs_w0cKRnc4_kmFW50HlF6S6/exec'; 
 
     const urlParams = new URLSearchParams(window.location.search);
     const studentToken = urlParams.get('token');
+    let scannedQrCode = null; // Store the scanned code here
 
     if (!studentToken) {
       document.getElementById('status').textContent = "Error: No student token found. Please log in again.";
@@ -41,41 +54,68 @@
     const html5QrCode = new Html5Qrcode("reader");
 
     function onScanSuccess(decodedText) {
+      // 1. Pause camera
       html5QrCode.pause();
+      
+      // 2. Extract the actual code from the URL inside the QR
+      try {
+        const url = new URL(decodedText);
+        scannedQrCode = url.searchParams.get('code') || decodedText;
+      } catch (e) {
+        scannedQrCode = decodedText;
+      }
+
+      // 3. Show the PIN input area
+      document.getElementById('pinArea').style.display = "block";
+      
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = "✅ QR Detected! Please enter the 4-digit code above.";
+      statusDiv.className = "status success";
+      statusDiv.style.display = "block";
+    }
+
+    function onScanFailure(error) {
+      // Ignore background failures
+    }
+
+    function submitScan() {
+      const pin = document.getElementById('secretCode').value.trim();
+      if (!pin) return alert("Please enter the 4-digit code.");
 
       const statusDiv = document.getElementById('status');
       statusDiv.textContent = "Verifying...";
       statusDiv.className = "status";
       statusDiv.style.display = "block";
 
+      // 4. Send to Google Apps Script
       fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
+        // CRITICAL: Use text/plain to bypass CORS on mobile phones
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'scan',
           token: studentToken,
-          code: decodedText
+          code: scannedQrCode,
+          secretCode: pin  // Send the 4-digit code!
         })
       })
       .then(response => response.json())
       .then(data => {
         if (data.error) {
-          statusDiv.textContent = "Error: " + data.error;
+          statusDiv.textContent = "❌ " + data.error;
           statusDiv.className = "status error";
-          setTimeout(() => { html5QrCode.resume(); statusDiv.style.display = "none"; }, 3000);
+          // Let them try again
+          document.getElementById('pinArea').style.display = "block";
         } else {
           statusDiv.textContent = "✅ Success! " + data.status + " at " + data.time;
           statusDiv.className = "status success";
+          document.getElementById('pinArea').style.display = "none"; // Hide input on success
         }
       })
       .catch(err => {
         statusDiv.textContent = "Network Error. Check your connection.";
         statusDiv.className = "status error";
-        setTimeout(() => { html5QrCode.resume(); statusDiv.style.display = "none"; }, 3000);
       });
-    }
-
-    function onScanFailure(error) {
-      // Ignore
     }
 
     if (studentToken) {
