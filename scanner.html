@@ -50,12 +50,15 @@
 
     function onScanSuccess(decodedText) {
       html5QrCode.pause();
+      
+      // THIS IS THE CRITICAL FIX: Extract just the code part from the URL
       try {
         const url = new URL(decodedText);
         scannedQrCode = url.searchParams.get('code') || decodedText;
       } catch (e) {
         scannedQrCode = decodedText;
       }
+
       document.getElementById('pinArea').style.display = "block";
       const statusDiv = document.getElementById('status');
       statusDiv.textContent = "✅ QR Detected! Enter the 4-digit code.";
