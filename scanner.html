@@ -33,15 +33,16 @@
     let isProcessing = false;
 
     if (!studentToken) {
-      document.getElementById('status').textContent = "Error: No student token found. Please log in again.";
-      document.getElementById('status').className = "status error";
-      document.getElementById('status').style.display = "block";
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = "Error: No student token found. Please log in again.";
+      statusDiv.className = "status error";
+      statusDiv.style.display = "block";
     }
 
     const html5QrCode = new Html5Qrcode("reader");
 
     function onScanSuccess(decodedText) {
-      if (isProcessing) return; // Prevent multiple scans
+      if (isProcessing) return; 
       isProcessing = true;
       
       html5QrCode.pause();
@@ -52,34 +53,39 @@
       try {
         const url = new URL(decodedText);
         scannedCode = url.searchParams.get('code');
-        scannedPin = url.searchParams.get('pin'); // Extract PIN automatically!
+        scannedPin = url.searchParams.get('pin'); 
       } catch (e) {
         scannedCode = decodedText;
       }
 
-      if (!scannedCode || !scannedPin) {
-        showError("Invalid QR Code. Please ask the lecturer to generate a new one.");
-        return;
-      }
-
       const statusDiv = document.getElementById('status');
-      statusDiv.textContent = "Getting GPS location...";
-      statusDiv.className = "status";
       statusDiv.style.display = "block";
+      statusDiv.className = "status";
+      statusDiv.textContent = "Processing QR Code...";
 
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          function(position) { 
-            sendToBackend(scannedCode, scannedPin, position.coords.latitude, position.coords.longitude); 
-          },
-          function(error) {
-            showError("❌ GPS Error: Please allow location access in your browser settings.");
-          },
-          { enableHighAccuracy: true, timeout: 10000 }
-        );
-      } else {
-        showError("❌ Geolocation is not supported by this browser.");
-      }
+      // Wait a tiny bit to ensure the URL parser finishes
+      setTimeout(() => {
+        if (!scannedCode || !scannedPin) {
+          showError("❌ Invalid QR Code. Ask lecturer to generate a new one.");
+          return;
+        }
+
+        statusDiv.textContent = "Getting GPS location...";
+
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            function(position) { 
+              sendToBackend(scannedCode, scannedPin, position.coords.latitude, position.coords.longitude); 
+            },
+            function(error) {
+              showError("❌ GPS Error: Please allow location access in your browser settings.");
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        } else {
+          showError("❌ Geolocation is not supported by this browser.");
+        }
+      }, 100);
     }
 
     function sendToBackend(code, pin, lat, lng) {
@@ -105,7 +111,7 @@
         } else {
           statusDiv.textContent = "✅ Success! " + data.status + " at " + data.time;
           statusDiv.className = "status success";
-          html5QrCode.stop(); // Stop scanning on success
+          html5QrCode.stop(); 
         }
       })
       .catch(err => {
@@ -127,11 +133,12 @@
         { facingMode: "environment" }, 
         { fps: 10, qrbox: { width: 250, height: 250 } },
         onScanSuccess,
-        (err) => { } // Ignore background scan errors
+        (err) => { } 
       ).catch(err => {
-        document.getElementById('status').textContent = "Camera Error: " + err;
-        document.getElementById('status').className = "status error";
-        document.getElementById('status').style.display = "block";
+        const statusDiv = document.getElementById('status');
+        statusDiv.textContent = "Camera Error: " + err;
+        statusDiv.className = "status error";
+        statusDiv.style.display = "block";
       });
     }
   </script>
